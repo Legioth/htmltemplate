@@ -25,6 +25,7 @@ import com.vaadin.flow.dom.Element;
 import com.vaadin.flow.internal.AnnotationReader;
 import com.vaadin.flow.internal.ReflectTools;
 import com.vaadin.flow.server.VaadinService;
+import com.vaadin.flow.shared.util.SharedUtil;
 
 /**
  * Abstract base class for a component that is initialized based on the contents
@@ -134,7 +135,22 @@ public abstract class HtmlTemplate extends Component {
             jsoupElement.attributes().forEach(attr -> {
                 String value = attr.getValue();
                 String key = attr.getKey();
-                if (value == null || value.equals("")) {
+                if (key.startsWith("!")) {
+                    String propertyName = SharedUtil.dashSeparatedToCamelCase(key.substring(1));
+                    boolean valueBoolean = value.equals("") || value.equalsIgnoreCase("true")
+                            || value.contentEquals("1");
+                    flowElement.setProperty(propertyName, valueBoolean);
+                } else if (key.startsWith(".")) {
+                    String propertyName = SharedUtil.dashSeparatedToCamelCase(key.substring(1));
+                    flowElement.setProperty(propertyName, value);
+                } else if (key.startsWith("%")) {
+                    String propertyName = SharedUtil.dashSeparatedToCamelCase(key.substring(1));
+                    try {
+                        flowElement.setProperty(propertyName, Double.parseDouble(value));
+                    } catch (NumberFormatException e) {
+                        throw new RuntimeException("Cannot parse value for numeric property " + propertyName);
+                    }
+                } else if (value == null || value.equals("")) {
                     flowElement.setAttribute(key, true);
                 } else {
                     flowElement.setAttribute(key, value);

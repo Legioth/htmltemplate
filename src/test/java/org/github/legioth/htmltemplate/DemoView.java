@@ -5,6 +5,7 @@ import com.vaadin.flow.component.dependency.Uses;
 import com.vaadin.flow.component.html.Div;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.component.polymertemplate.Id;
+import com.vaadin.flow.component.textfield.PasswordField;
 import com.vaadin.flow.component.textfield.TextField;
 import com.vaadin.flow.router.Route;
 
@@ -16,7 +17,7 @@ public class DemoView extends HtmlTemplate {
     private TextField name;
 
     @Id
-    private TextField location;
+    private PasswordField password;
 
     @Id
     private Button submit;
@@ -25,8 +26,12 @@ public class DemoView extends HtmlTemplate {
     private Div message;
 
     public DemoView() {
+        System.out.println("Label: " + name.getLabel());
+        System.out.println("Max length: " + name.getMaxLength());
+        System.out.println("Reveal button visible: " + password.isRevealButtonVisible());
+
         submit.addClickListener(event -> {
-            message.setText("Hello " + name.getValue() + " from " + location.getValue());
+            message.setText("Hello " + name.getValue() + " with password " + password.getValue());
         });
     }
 }
