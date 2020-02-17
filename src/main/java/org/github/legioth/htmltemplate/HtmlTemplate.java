@@ -10,6 +10,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.Supplier;
 
 import org.jsoup.Jsoup;
 import org.jsoup.helper.DataUtil;
@@ -37,15 +38,14 @@ import com.vaadin.flow.shared.util.SharedUtil;
  */
 @Tag("div")
 public abstract class HtmlTemplate extends Component {
-    private static final String USE_CLASS_AS_URL = "__USE_CLASS_AS_URL__";
     private static ConcurrentHashMap<String, Document> parserCache = new ConcurrentHashMap<>();
 
     /**
      * Creates a new HTML template based on an HTML file on the classpath with
-     * the same name of this class, but using .html as the file extension.
+     * the same name as this class, but using .html as the file extension.
      */
     protected HtmlTemplate() {
-        this(USE_CLASS_AS_URL);
+        populateFromClasspath(getClass().getSimpleName() + ".html");
     }
 
     /**
@@ -59,11 +59,41 @@ public abstract class HtmlTemplate extends Component {
     protected HtmlTemplate(String templateUrl) {
         Objects.requireNonNull(templateUrl, "The template URL cannot be null");
 
-        if (USE_CLASS_AS_URL.equals(templateUrl)) {
-            templateUrl = getClass().getSimpleName() + ".html";
-        }
+        populateFromClasspath(templateUrl);
+    }
 
-        Document document = getTemplate(getClass(), templateUrl);
+    /**
+     * Creates a new HTML template based on HTML read from an input stream.
+     * 
+     * @param cacheKey
+     *            the key to use for potentially caching the result of reading
+     *            and parsing the template, or <code>null</code> never cache the
+     *            result
+     * @param streamSupplier
+     *            an input stream supplier that will be used if caching isn't
+     *            used or if there is a cache miss, not <code>null</code>
+     */
+    protected HtmlTemplate(String cacheKey, StreamSupplier streamSupplier) {
+        populate(cacheKey, streamSupplier);
+    }
+
+    private void populateFromClasspath(String templateUrl) {
+        Class<?> origin = getClass();
+
+        populate("classpath:" + origin + "/" + templateUrl, () -> {
+            InputStream resourceAsStream = origin.getResourceAsStream(templateUrl);
+
+            if (resourceAsStream == null) {
+                throw new IllegalArgumentException("Could not find " + templateUrl
+                        + " on the classpath relative to the class " + origin.getName());
+            }
+
+            return resourceAsStream;
+        });
+    }
+
+    private void populate(String cacheKey, StreamSupplier streamSupplier) {
+        Document document = getTemplate(cacheKey, streamSupplier);
 
         Map<String, Element> idMap = new HashMap<>();
 
@@ -87,16 +117,21 @@ public abstract class HtmlTemplate extends Component {
         }
     }
 
-    private static Document getTemplate(Class<?> origin, String url) {
-        boolean productionMode = true;
-        VaadinService service = VaadinService.getCurrent();
-        if (service != null) {
-            productionMode = service.getDeploymentConfiguration().isProductionMode();
+    private static Document getTemplate(String cacheKey, StreamSupplier streamSupplier) {
+        boolean useCache;
+        if (cacheKey == null) {
+            useCache = false;
+        } else {
+            VaadinService service = VaadinService.getCurrent();
+            if (service != null) {
+                useCache = service.getDeploymentConfiguration().isProductionMode();
+            } else {
+                useCache = true;
+            }
         }
 
-        if (productionMode) {
-            String cacheKey = origin.getPackage().getName() + "/" + url;
-            return parserCache.computeIfAbsent(cacheKey, ignore -> readTemplate(origin, url));
+        if (useCache) {
+            return parserCache.computeIfAbsent(cacheKey, ignore -> readTemplate(streamSupplier));
         } else {
             /*
              * Read without caching in dev mode so that changes are available
@@ -104,16 +139,12 @@ public abstract class HtmlTemplate extends Component {
              * reads resources straight from their original file system
              * location).
              */
-            return readTemplate(origin, url);
+            return readTemplate(streamSupplier);
         }
     }
 
-    private static Document readTemplate(Class<?> origin, String url) {
-        try (InputStream resourceAsStream = origin.getResourceAsStream(url)) {
-            if (resourceAsStream == null) {
-                throw new IllegalArgumentException(
-                        "Could not find " + url + " on the classpath relative to the class " + origin.getName());
-            }
+    private static Document readTemplate(StreamSupplier streamSupplier) {
+        try (InputStream resourceAsStream = streamSupplier.createStream()) {
             return Jsoup.parseBodyFragment(
                     StandardCharsets.UTF_8.decode(DataUtil.readToByteBuffer(resourceAsStream, 0)).toString());
         } catch (IOException e) {
